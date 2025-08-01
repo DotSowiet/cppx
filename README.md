@@ -44,7 +44,7 @@ cppx doc
 - [Conan](https://conan.io/)
 
 ## Contributing
-See `CONTRIBUTING_en.md` for details.
+See `CONTRIBUTING.md` for details.
 
 ## License
 This project is licensed under the Apache 2.0 License. See `LICENSE` for details.
