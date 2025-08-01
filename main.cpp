@@ -200,7 +200,7 @@ void handle_project_new(const std::string &projectName)
     fs::path project_root = fs::path(projectName);
 
     toml::table config;
-    config.insert_or_assign("name", projectName);
+    config.insert_or_assign("name", projectName); 
 
     fs::path srcpath = project_root / "src" / "main.cpp";
     fs::path includepath = project_root / "include" / "main.hpp";
@@ -211,12 +211,6 @@ void handle_project_new(const std::string &projectName)
     fs::create_directories(testpath.parent_path());
 
     std::ofstream(srcpath) << R"(#include <main.hpp>
-#include <iostream>
-
-void printhelloworld()
-{
-    std::cout << "Hello, world!\n";
-}
 
 int main()
 {
@@ -226,11 +220,16 @@ int main()
 )";
 
     std::ofstream(includepath) << R"(#pragma once
+#include <iostream>
 
 /**
  * @brief Prints "Hello, world!" to the console.
  */
-void printhelloworld();
+void printhelloworld()
+{
+    std::cout << "Hello, world!\n";
+}
+
 )";
 
     std::ofstream(testpath) << R"(#include <cassert>
