@@ -1,11 +1,11 @@
 /*
 
  ┌─────────────────────────────────────────────────────────────────────────────┐
- │                               ###  ###   ###  #  #                           │
+ │                               ###  ###   ###  #  #                          │
  │                              #     ###   ###   #                            │
  │                               ###  #     #    # #                           │
  ├─────────────────────────────────────────────────────────────────────────────┤
- │                                CPPX - C++ Project Manager                    │
+ │                                CPPX - C++ Project Manager                   │
  │                                                                             │
  │ CPPX is a CLI application that provides a unified interface to manage       │
  │ C++ projects seamlessly.                                                    │
@@ -20,7 +20,6 @@
  │                                                                             │
  │ Streamlining your C++ project workflow in one powerful tool.                │
  └─────────────────────────────────────────────────────────────────────────────┘
-
 
 */
 #include <algorithm>
@@ -37,6 +36,7 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#include <csignal>
 
 #include <fmt/color.h>
 #include <fmt/core.h>
@@ -49,6 +49,7 @@
 
 #include "github.hpp"
 #include "helpers.hpp"
+
 int main(int argc, char **argv)
 {
     CLI::App app{"cppx — project manager for C++"};
@@ -200,7 +201,7 @@ void handle_project_new(const std::string &projectName)
     fs::path project_root = fs::path(projectName);
 
     toml::table config;
-    config.insert_or_assign("name", projectName); 
+    config.insert_or_assign("name", projectName);
 
     fs::path srcpath = project_root / "src" / "main.cpp";
     fs::path includepath = project_root / "include" / "main.hpp";
@@ -408,6 +409,11 @@ void handle_build(bool debug, const std::string &build_config)
         command += fmt::format("-L\"{}\" ", libpath);
     }
 
+    for(const auto& [name, value] : ps.defines)
+    {
+        command += fmt::format("-D{}=\"{}\" ", name, value);
+    }
+
     switch (ps.buildsettings.btype)
     {
     case buildType::BUILD_EXECUTABLE:
@@ -501,118 +507,98 @@ void handle_run()
 
 void handle_watch(const std::string &dir, bool force)
 {
+    using namespace std::chrono_literals;
     if (tcgetpgrp(STDIN_FILENO) == getpgrp() && !force)
     {
-        throw CPPX_Exception(
-            "The watch command must be run in the background (with &).\nUse -f (--force) to run it in the foreground.");
+        throw CPPX_Exception("The watch command must be run in the background (with &).\n"
+                             "Use -f (--force) to run it in the foreground.");
     }
-    std::string path;
+
     ProjectConfig pc = getCurrentProject();
+    fs::path watch_dir;
     if (dir == "src")
     {
-        path = fmt::format("{}/src", pc.path);
+        watch_dir = fs::path(pc.path) / "src";
     }
     else
     {
-        throw CPPX_Exception(fmt::format("Invalid directory: {}, available directories: src", dir));
+        throw CPPX_Exception(fmt::format("Invalid directory: {}, available: src", dir));
     }
 
-    int fd = inotify_init();
-    if (fd < 0)
+    if (!fs::exists(watch_dir) || !fs::is_directory(watch_dir))
     {
-        throw CPPX_Exception("Failed to initialize Inotify!");
+        throw CPPX_Exception(fmt::format("Directory does not exist: {}", watch_dir.string()));
     }
 
-    int wd = inotify_add_watch(fd, path.c_str(), IN_CREATE | IN_DELETE);
-    if (wd == -1)
-    {
-        close(fd);
-        throw CPPX_Exception(fmt::format("Failed to add watch to directory: {}", path));
-    }
+    fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "\nMonitoring directory: {}\n\n", watch_dir.string());
 
-    fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "\nMonitoring directory: {}\n\n", path);
-
-    char buffer[eventBufLen];
-
-    while (true)
-    {
-        ssize_t length = read(fd, buffer, eventBufLen);
-        if (length < 0)
+    // callback wywoływana przy utworzeniu/usunięciu pliku
+    auto cb = [&](fs::path filename, bool created) {
+        auto name = filename.string();
+        try
         {
-            perror("read");
-            break;
-        }
+            const std::string configpath = fmt::format("{}/config.toml", pc.path);
+            toml::table tbl = toml::parse_file(configpath);
 
-        ssize_t i = 0;
-        while (i < length)
-        {
-            inotify_event *event = reinterpret_cast<inotify_event *>(&buffer[i]);
-            if (event->len)
+            ProjectSettings projset = getProjectSettings();
+            if (created)
             {
-                try
+                fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "File added: {}\n", name);
+                if (std::find(projset.ignoredFiles.begin(), projset.ignoredFiles.end(), name) !=
+                    projset.ignoredFiles.end())
                 {
-                    if (event->mask & IN_CREATE)
-                    {
-                        fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "File added: {}\n", event->name);
-
-                        ProjectSettings projset = getProjectSettings();
-                        if (std::find(projset.ignoredFiles.begin(), projset.ignoredFiles.end(), event->name) !=
-                            projset.ignoredFiles.end())
-                        {
-                            fmt::print(fmt::emphasis::bold | fg(fmt::color::yellow), "Ignoring file: {}\n\n",
-                                       event->name);
-                            i += sizeof(inotify_event) + event->len;
-                            continue;
-                        }
-                        const std::string configpath = fmt::format("{}/config.toml", pc.path);
-                        fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "Updating configuration: {}\n\n",
-                                   configpath);
-                        toml::table tbl = toml::parse_file(configpath);
-
-                        if (auto *arr = tbl["source"]["src files"].as_array())
-                        {
-                            arr->push_back(fmt::format("src/{}", event->name));
-                        }
-
-                        std::ofstream out(configpath);
-                        out << tbl;
-                    }
-                    else if (event->mask & IN_DELETE)
-                    {
-                        fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "File removed: {}\n", event->name);
-
-                        const std::string configpath = fmt::format("{}/config.toml", pc.path);
-                        toml::table tbl = toml::parse_file(configpath);
-
-                        if (auto *arr = tbl["source"]["src files"].as_array())
-                        {
-                            toml::array new_array;
-                            for (const auto &node : *arr)
-                            {
-                                if (const auto *str = node.as_string())
-                                {
-                                    if (*str == fmt::format("src/{}", event->name))
-                                        continue;
-                                }
-                                new_array.push_back(node);
-                            }
-                            *arr = std::move(new_array);
-                        }
-
-                        std::ofstream out(configpath);
-                        out << tbl;
-                    }
+                    fmt::print(fmt::emphasis::bold | fg(fmt::color::yellow), "Ignoring file: {}\n\n", name);
+                    return;
                 }
-                catch (const std::exception &e)
+                if (auto *arr = tbl["source"]["src files"].as_array())
                 {
-                    fmt::print(stderr, fg(fmt::color::red), "Error during watch: {}\n", e.what());
+                    arr->push_back(fmt::format("src/{}", name));
                 }
             }
-            i += sizeof(inotify_event) + event->len;
-        }
-    }
-}
+            else
+            {
+                fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "File removed: {}\n", name);
+                if (auto *arr = tbl["source"]["src files"].as_array())
+                {
+                    toml::array new_arr;
+                    for (auto const &node : *arr)
+                    {
+                        if (auto const *str = node.as_string())
+                        {
+                            if (*str == fmt::format("src/{}", name))
+                                continue;
+                        }
+                        new_arr.push_back(node);
+                    }
+                    *arr = std::move(new_arr);
+                }
+            }
 
+            std::ofstream out(configpath);
+            out << tbl;
+            fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "Configuration updated: {}\n\n", configpath);
+        }
+        catch (std::exception const &e)
+        {
+            fmt::print(stderr, fg(fmt::color::red), "Error during watch callback: {}\n", e.what());
+        }
+    };
+
+    // Signal handling for graceful shutdown
+    static std::atomic_bool stop_requested{false};
+    auto signal_handler = [](int) {
+        stop_requested = true;
+    };
+    std::signal(SIGINT, signal_handler);
+
+    std::jthread watcher_thread([&](std::stop_token st) {
+        FileWatcher fw(watch_dir, cb, std::chrono::seconds(1));
+        while (!st.stop_requested() && !stop_requested) {
+            fw.run(st);
+        }
+    });
+    watcher_thread.join();
+}
 void handle_ignore(const std::vector<fs::path> &directories)
 {
     ProjectConfig pc = getCurrentProject();

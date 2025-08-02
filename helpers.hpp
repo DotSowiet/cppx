@@ -25,6 +25,7 @@
 #include <toml++/toml.hpp>
 // Global verbose flag
 bool verbose_output = false;
+// Removed using namespace std::chrono_literals
 
 #define LOG_VERBOSE(...)                                                                                               \
     if (verbose_output)                                                                                                \
@@ -324,17 +325,20 @@ struct ProjectSettings
     std::string github_username;
     std::string github_repo;
 
+    std::unordered_map<std::string, std::string> defines;
+
     ProjectSettings(const std::string &n, const std::vector<std::string> &iff, const std::vector<std::string> &s,
                     const std::vector<std::string> &ip, const std::vector<std::string> &igs,
                     const std::vector<std::string> &igf, const std::unordered_map<std::string, std::string> &d,
                     const std::vector<std::string> &staticLinkFiles, const std::vector<std::string> &LinkDirs,
                     const std::unordered_map<std::string, std::string> &extra, const BuildSettings &bset,
                     const std::string &version, const std::vector<std::string> &authors, const std::string &description,
-                    const std::string &license, const std::string &github_username, const std::string &github_repo)
+                    const std::string &license, const std::string &github_username, const std::string &github_repo,
+                    std::unordered_map<std::string, std::string> defines)
         : name(n), includefiles(iff), srcfiles(s), includepaths(ip), ignoredPaths(igs), ignoredFiles(igf),
           staticLinkFiles(staticLinkFiles), LinkDirs(LinkDirs), dependencies(d), extra(extra), buildsettings(bset),
           version(version), authors(authors), description(description), license(license),
-          github_username(github_username), github_repo(github_repo)
+          github_username(github_username), github_repo(github_repo), defines(defines)
     {
     }
 };
@@ -491,9 +495,24 @@ ProjectSettings getProjectSettings()
             bset.outputName = proj.name;
         }
     }
+
+    std::unordered_map<std::string, std::string> defines;
+    if (auto define_ = config["defines"].as_table())
+    {
+        for (const auto &[key, node] : *define_->as_table())
+        {
+            if (!node.is_string())
+            {
+                throw CPPX_Exception(
+                    fmt::format("Invalid configuration: define value for '{}' is not a string!", key.str()));
+            }
+            defines[std::string(key.str())] = node.value_or("");
+        }
+    }
+
     return ProjectSettings(proj.name, includefiles, srcfiles, includedirs, ignoredDirs, ignoredFiles, dep,
                            staticLinkFiles, LinkDirs, extra, bset, version, authors, description, license,
-                           github_username, github_repo);
+                           github_username, github_repo, defines);
 }
 
 ProjectConfig getCurrentProject()
@@ -682,3 +701,77 @@ inline void setMetadata(const std::string &key, const std::vector<std::string> &
     std::ofstream ofs(pc.path + "/config.toml");
     ofs << table;
 }
+class FileWatcher
+{
+  public:
+    using Callback = std::function<void(fs::path, bool created)>;
+
+    // Constructor for FileWatcher
+    FileWatcher(fs::path dir, Callback cb, std::chrono::milliseconds interval = std::chrono::milliseconds(500))
+        : _dir(std::move(dir)), _cb(std::move(cb)), _interval(interval)
+    {
+        _snapshot = snapshot_dir();
+    }
+
+    void run(std::stop_token stoken)
+    {
+        while (!stoken.stop_requested())
+        {
+            std::this_thread::sleep_for(_interval);
+            std::unordered_map<fs::path, fs::file_time_type> current;
+            try {
+                current = snapshot_dir();
+            } catch (const std::filesystem::filesystem_error &e) {
+                fmt::print(stderr, fmt::emphasis::bold | fg(fmt::color::red),
+                           "[FileWatcher] Filesystem error: {}\n", e.what());
+                continue;
+            } catch (const std::exception &e) {
+                fmt::print(stderr, fmt::emphasis::bold | fg(fmt::color::red),
+                           "[FileWatcher] Unexpected error: {}\n", e.what());
+                continue;
+            }
+
+            // Detect new files
+            for (auto const &[p, time] : current)
+            {
+                if (!_snapshot.contains(p))
+                {
+                    _cb(p, true);
+                }
+            }
+            // Detect removed files
+            for (auto const &[p, time] : _snapshot)
+            {
+                if (!current.contains(p))
+                {
+                    _cb(p, false);
+                }
+            }
+
+            _snapshot = std::move(current);
+        }
+    }
+
+  private:
+    fs::path _dir;
+    Callback _cb;
+    std::chrono::milliseconds _interval;
+    std::unordered_map<fs::path, fs::file_time_type> _snapshot;
+
+    static std::unordered_map<fs::path, fs::file_time_type> snapshot_dir(fs::path const &dir)
+    {
+        std::unordered_map<fs::path, fs::file_time_type> m;
+        for (auto const &entry : fs::directory_iterator(dir))
+        {
+            if (entry.is_regular_file())
+            {
+                m[entry.path().filename()] = entry.last_write_time();
+            }
+        }
+        return m;
+    }
+    std::unordered_map<fs::path, fs::file_time_type> snapshot_dir() const
+    {
+        return snapshot_dir(_dir);
+    }
+};
