@@ -10,9 +10,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <sys/inotify.h>
 #include <thread>
-#include <unistd.h>
 #include <vector>
 
 #include <fmt/color.h>
