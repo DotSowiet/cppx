@@ -1,7 +1,6 @@
 #pragma once
 
 #include <curl/curl.h> // Requires libcurl to be installed
-#include <iostream>
 #include <nlohmann/json.hpp> // Requires nlohmann/json to be installed
 #include <string>
 
@@ -10,19 +9,19 @@ struct GithubInfo
 {
     std::string name;             // Repository name
     std::string description;      // Repository description
-    int stars;                    // Number of stars
-    int forks;                    // Number of forks
-    int open_issues;              // Number of open issues
+    int stars{};                    // Number of stars
+    int forks{};                    // Number of forks
+    int open_issues{};              // Number of open issues
     std::string last_commit_date; // Date of the last commit
     std::string html_url;         // GitHub repository URL
-    bool success;                 // Whether information retrieval was successful
+    bool success{};                 // Whether information retrieval was successful
     std::string error_message;    // Error message (if any)
 };
 
 // cURL callback to write data to a string
-size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
+size_t WriteCallback(void *contents, const size_t size, const size_t nmemb, void *userp)
 {
-    ((std::string *)userp)->append((char *)contents, size * nmemb);
+    static_cast<std::string *>(userp)->append(static_cast<char *>(contents), size * nmemb);
     return size * nmemb;
 }
 
@@ -33,12 +32,12 @@ GithubInfo getRepoInfo(const std::string &owner, const std::string &repo_name)
     info.success = false; // Default to failure
 
     CURL *curl;
-    CURLcode res;
     std::string readBuffer;
 
     curl = curl_easy_init();
     if (curl)
     {
+        CURLcode res;
         std::string url = "https://api.github.com/repos/" + owner + "/" + repo_name;
 
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -59,10 +58,9 @@ GithubInfo getRepoInfo(const std::string &owner, const std::string &repo_name)
             try
             {
                 // Parsing JSON response
-                auto json_data = nlohmann::json::parse(readBuffer);
 
                 // Check if the API returned an error (e.g., repository not found)
-                if (json_data.contains("message") && json_data["message"] == "Not Found")
+                if (auto json_data = nlohmann::json::parse(readBuffer);json_data.contains("message") && json_data["message"] == "Not Found")
                 {
                     info.error_message = "Repository not found or access denied.";
                 }
@@ -76,8 +74,7 @@ GithubInfo getRepoInfo(const std::string &owner, const std::string &repo_name)
                     info.html_url = json_data.value("html_url", "N/A");
 
                     // GitHub API returns the last push date as "pushed_at"
-                    std::string pushed_at = json_data.value("pushed_at", "N/A");
-                    if (pushed_at != "N/A" && pushed_at.length() >= 10)
+                    if (std::string pushed_at = json_data.value("pushed_at", "N/A");pushed_at != "N/A" && pushed_at.length() >= 10)
                     {
                         info.last_commit_date = pushed_at.substr(0, 10); // Get only the date (YYYY-MM-DD)
                     }

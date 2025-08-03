@@ -33,7 +33,9 @@ FetchContent_MakeAvailable(fmt tomlplusplus CLI11)
 
 find_package(CURL REQUIRED)
 
-add_executable(cppx main.cpp)
+add_executable(cppx main.cpp
+        helpers.cpp
+)
 
 target_link_libraries(cppx PRIVATE
     fmt::fmt
