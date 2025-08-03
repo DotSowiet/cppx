@@ -7,7 +7,7 @@ This document outlines the planned features and improvements for CPPX, a C++ pro
 CPPX is a simple yet powerful C++ project manager aimed at streamlining dependency and build management by unifying existing tools into a cohesive ecosystem.
 
 ## Current Version
-- **Version**: 0.1.0 `[beta]`
+- **Version**: 0.1.1` `[untested]`
 - **Release Date**: 2025-08-01
 - **Status**: Beta
 - **License**: Apache 2.0

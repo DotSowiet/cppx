@@ -4,6 +4,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 #include <unordered_map>
 #include <chrono>
@@ -116,6 +117,16 @@ struct BuildSettings
     BuildSettings() = default;
 };
 
+struct Format
+{
+    std::string formatBase{};
+    bool clangFormatFile{};
+    std::string clangFormatFilepath{};
+
+    Format(std::string  formatBase, bool clangFormatFile, std::string  clangFormatFilepath) : formatBase(std::move(formatBase)), clangFormatFile(clangFormatFile), clangFormatFilepath(std::move((clangFormatFilepath))) {}
+
+    Format() = default;
+};
 struct ProjectSettings
 {
     std::string name;
@@ -138,15 +149,29 @@ struct ProjectSettings
     std::string github_username;
     std::string github_repo;
     std::unordered_map<std::string, std::string> defines;
+    Format format;
 
-    ProjectSettings(std::string n, const std::vector<std::string> &iff, const std::vector<std::string> &s,
-                    const std::vector<std::string> &ip, const std::vector<std::string> &igs,
-                    const std::vector<std::string> &igf, const std::unordered_map<std::string, std::string> &d,
-                    const std::vector<std::string> &staticLinkFiles, const std::vector<std::string> &LinkDirs,
-                    const std::unordered_map<std::string, std::string> &extra, BuildSettings bset,
-                    std::string version, const std::vector<std::string> &authors, std::string description,
-                    std::string license, std::string github_username, std::string github_repo,
-                    std::unordered_map<std::string, std::string> defines);
+    ProjectSettings(std::string n,
+                    const std::vector<std::string> &iff,
+                    const std::vector<std::string> &s,
+                    const std::vector<std::string> &ip,
+                    const std::vector<std::string> &igs,
+                    const std::vector<std::string> &igf,
+                    const std::unordered_map<std::string, std::string> &d,
+                    const std::vector<std::string> &staticLinkFiles,
+                    const std::vector<std::string> &LinkDirs,
+                    const std::unordered_map<std::string, std::string> &extra,
+                    BuildSettings bset,
+                    std::string version,
+                    const std::vector<std::string> &authors,
+                    std::string description,
+                    std::string license,
+                    std::string github_username,
+                    std::string github_repo,
+                    std::unordered_map<std::string, std::string> defines,
+                    Format format)
+        ;
+
 };
 
 ProjectConfig getCurrentProject();
@@ -227,7 +252,7 @@ void handle_clean();
 void handle_test();
 void handle_metadata();
 void handle_info();
-
+void handle_fmt(const std::vector<std::string> &range);
 class FileWatcher
 {
   public:
@@ -245,3 +270,12 @@ class FileWatcher
     static std::unordered_map<fs::path, fs::file_time_type> snapshot_dir(fs::path const &dir);
     [[nodiscard]] std::unordered_map<fs::path, fs::file_time_type> snapshot_dir() const;
 };
+std::string glob_to_regex(const std::string& glob);
+std::vector<std::filesystem::path> glob(const std::filesystem::path& root, const std::string& pattern); inline bool is_glob(const std::string& pattern) {
+    for (const char c : pattern) {
+        if (c == '*' || c == '?' || c == '[') {
+            return true;
+        }
+    }
+    return false;
+}

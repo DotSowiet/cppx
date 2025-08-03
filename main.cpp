@@ -131,6 +131,13 @@ int main(int argc, char **argv)
     auto metadata = app.add_subcommand("metadata", "Adds metadata to config.toml");
     auto info = app.add_subcommand("info", "Displays project information");
 
+    // format
+    auto format = app.add_subcommand("format", "Formats the project files");
+
+    std::vector<std::string> range{};
+
+    format->add_option("Files", range, "Sets file to format");
+
     // ─────────────────────────────────────────────────────────────────
     // Parse & dispatch
     try
@@ -169,6 +176,8 @@ int main(int argc, char **argv)
             handle_metadata();
         else if (info->parsed())
             handle_info();
+        else if (format->parsed())
+            handle_fmt(range);
         else
             throw CPPX_Exception("Unknown command or missing required arguments.");
     }
@@ -1359,4 +1368,53 @@ void handle_info()
                display_width - 4 - std::string("✔ Project information displayed!").length());
     fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "└{}┘\n", horizontal_line);
     fmt::print("\n");
+}
+
+void handle_fmt(const std::vector<std::string> &range)
+{
+    const ProjectSettings ps = getProjectSettings();
+    const ProjectConfig pc = getCurrentProject();
+    std::vector<fs::path> files;
+
+    for (const auto& file : range)
+    {
+        if (is_glob(file))
+        {
+            for (const auto& t : glob(pc.path, file))
+            {
+                files.push_back(t);
+            }
+        }
+    }
+
+    for (const auto& file : files)
+    {
+
+        fmt::print(fmt::text_style(fmt::emphasis::bold) | fg(fmt::color::green), "Formatting: {}\n", file);
+
+        std::string command = "clang-format ";
+
+        if (ps.format.clangFormatFile)
+        {
+            if (ps.format.clangFormatFilepath == "!")
+            {
+                fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Invalid Format Configuration!\n");
+                return;
+            }
+            command += "-style=\"$(cat " + ps.format.clangFormatFilepath + ")\" ";
+        }
+        else
+        {
+            if (ps.format.formatBase == "" || ps.format.formatBase.empty())
+
+                command += "-style=Microsoft ";
+             else
+            command += "-style=\"" + ps.format.formatBase + "\" ";
+        }
+
+        command += "-i " + file.string();
+
+        fmt::print("executing: {}\n", command);
+        std::system(command.c_str());
+    }
 }

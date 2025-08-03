@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <regex>
 
  bool isAbsolutePath(const std::string &path)
 {
@@ -213,13 +214,27 @@ ProjectSettings::ProjectSettings(std::string n, const std::vector<std::string> &
                                  const std::unordered_map<std::string, std::string> &extra, BuildSettings bset,
                                  std::string version, const std::vector<std::string> &authors, std::string description,
                                  std::string license, std::string github_username, std::string github_repo,
-                                 std::unordered_map<std::string, std::string> defines)
-    : name(std::move(n)), includefiles(iff), srcfiles(s), includepaths(ip), ignoredPaths(igs), ignoredFiles(igf),
-      staticLinkFiles(staticLinkFiles), LinkDirs(LinkDirs), dependencies(d), extra(extra), buildsettings(std::move(bset)),
-      version(std::move(version)), authors(authors), description(std::move(description)), license(std::move(license)),
-      github_username(std::move(github_username)), github_repo(std::move(github_repo)), defines(std::move(defines))
-{
-}
+                                 std::unordered_map<std::string, std::string> defines, Format format)
+: name(std::move(n)),
+          includefiles(iff),
+          srcfiles(s),
+          includepaths(ip),
+          ignoredPaths(igs),
+          ignoredFiles(igf),
+          staticLinkFiles(staticLinkFiles),
+          LinkDirs(LinkDirs),
+          dependencies(d),
+          extra(extra),
+          buildsettings(std::move(bset)),
+          version(std::move(version)),
+          authors(authors),
+          description(std::move(description)),
+          license(std::move(license)),
+          github_username(std::move(github_username)),
+          github_repo(std::move(github_repo)),
+          defines(std::move(defines)),
+          format(std::move(format))
+ {}
 
 ProjectConfig getCurrentProject()
 {
@@ -454,9 +469,17 @@ ProjectSettings getProjectSettings()
         }
     }
 
+     Format format{};
+
+     if (auto format_ = config["format"].as_table())
+     {
+         format.formatBase =  (*format_)["base"].value_or<std::string>("Microsoft");
+         format.clangFormatFilepath = (*format_)["filepath"].value_or("!");
+         format.clangFormatFile = (*format_)["file"].value_or<bool>(false);
+     }
     return {proj.name, includefiles, srcfiles, includedirs, ignoredDirs, ignoredFiles, dep,
                            staticLinkFiles, LinkDirs, extra, bset, version, authors, description, license,
-                           github_username, github_repo, defines};
+                           github_username, github_repo, defines, format};
 }
 
 std::string pickCompiler()
@@ -589,3 +612,36 @@ std::unordered_map<fs::path, fs::file_time_type> FileWatcher::snapshot_dir() con
 {
     return snapshot_dir(_dir);
 }
+std::string glob_to_regex(const std::string& glob) {
+     std::string regex = "^";
+     for (size_t i = 0; i < glob.size(); ++i) {
+         switch (glob[i]) {
+         case '*':
+             if (i + 1 < glob.size() && glob[i + 1] == '*') {
+                 regex += ".*";
+                 ++i;
+             } else {
+                 regex += "[^/]*";
+             }
+             break;
+         case '?': regex += '.'; break;
+         case '.': regex += "\\."; break;
+         case '/': regex += "/"; break;
+         default: regex += glob[i]; break;
+         }
+     }
+     regex += "$";
+     return regex;
+ }
+std::vector<std::filesystem::path> glob(const std::filesystem::path& root, const std::string& pattern) {
+     std::vector<std::filesystem::path> result;
+     const std::regex re(glob_to_regex(pattern));
+     for (auto const& p : std::filesystem::recursive_directory_iterator(root)) {
+         if (std::filesystem::is_regular_file(p.path())) {
+             if (std::string relative = std::filesystem::relative(p.path(), root).generic_string();std::regex_match(relative, re)) {
+                 result.push_back(p.path());
+             }
+         }
+     }
+     return result;
+ }
