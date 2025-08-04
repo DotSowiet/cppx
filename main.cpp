@@ -155,6 +155,13 @@ int main(int argc, char **argv)
     auto metadata = app.add_subcommand("metadata", "Adds metadata to config.toml");
     auto info = app.add_subcommand("info", "Displays project information");
 
+    // format
+    auto format = app.add_subcommand("format", "Formats the project files");
+
+    std::vector<std::string> range{};
+
+    format->add_option("Files", range, "Sets file to format");
+
     // ─────────────────────────────────────────────────────────────────
     // Parse & dispatch
     try
@@ -193,6 +200,8 @@ int main(int argc, char **argv)
             handle_metadata();
         else if (info->parsed())
             handle_info();
+        else if (format->parsed())
+            handle_fmt(range);
         else
             throw CPPX_Exception("Unknown command or missing required arguments.");
     }
@@ -460,6 +469,7 @@ void handle_build(bool debug, const std::string &build_config)
     }
 
     print_status_message("Adding preprocessor definitions...", "...", fmt::color::cyan);
+
     for (const auto &[name, value] : ps.defines)
     {
         command += fmt::format("-D{}=\"{}\" ", name, value);
@@ -1408,4 +1418,91 @@ void handle_info()
                display_width - 4 - std::string("✔ Project information displayed!").length());
     fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "└{}┘\n", horizontal_line);
     fmt::print("\n");
+}
+
+void handle_fmt(const std::vector<std::string> &range)
+{
+    const ProjectSettings ps = getProjectSettings();
+    const ProjectConfig pc = getCurrentProject();
+    std::vector<fs::path> files;
+
+    // Check if the current project path is a valid directory
+    if (!fs::exists(pc.path) || !fs::is_directory(pc.path)) {
+        fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Error: Invalid project directory '{}'\n", pc.path);
+        return;
+    }
+
+    for (const auto &file : range)
+    {
+        fs::path p = fs::path(pc.path) / fs::path(file);
+        // Check if the file is a glob pattern
+        if (is_glob(file))
+        {
+            // Expand the glob pattern and add files to the list
+            for (const auto &t : glob(pc.path, file))
+            {
+                // Check if the glob result is a valid file
+                if (fs::exists(t) && fs::is_regular_file(t)) {
+                    files.push_back(t);
+                } else {
+                    fmt::print(fg(fmt::color::yellow), "Warning: Glob pattern '{}' matched a non-existent or non-regular file: '{}'\n", file, t.string());
+                }
+            }
+        }
+        else // Treat as a direct file path
+        {
+            // Check if the provided path is a valid file
+            if (fs::exists(p) && fs::is_regular_file(p)) {
+                files.push_back(p);
+            }
+            // Check if the path is a directory
+            else if (fs::exists(p) && fs::is_directory(p)) {
+                fmt::print(fmt::emphasis::bold | fg(fmt::color::yellow), "Warning: Skipping directory '{}', only files can be formatted.\n", p.string());
+            }
+            // If the path doesn't exist at all
+            else {
+                fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Error: File not found or invalid path: '{}'\n", p.string());
+            }
+        }
+    }
+
+    if (files.empty()) {
+        fmt::print(fg(fmt::color::yellow), "No valid files found to format. Exiting.\n");
+        return;
+    }
+
+    for (const auto &file : files)
+    {
+        fmt::print(fmt::text_style(fmt::emphasis::bold) | fg(fmt::color::green),
+                   "Formatting: {}\n", file.string());
+
+        std::string command;
+        if (ps.format.clangFormatFile)
+        {
+            if (ps.format.clangFormatFilepath == "!")
+            {
+                fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Invalid Format Configuration!\n");
+                return;
+            }
+
+            fs::path configPath = ps.format.clangFormatFilepath;
+            if (!fs::exists(configPath) || !fs::is_regular_file(configPath)) {
+                fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Error: Clang-format configuration file not found or is invalid: '{}'\n", configPath.string());
+                return;
+            }
+
+            command = "cd " + configPath.parent_path().string() +
+                      " && clang-format -style=file -i \"" + file.string() + "\"";
+        }
+        else
+        {
+            std::string style = ps.format.formatBase.empty() ? "Microsoft" : ps.format.formatBase;
+            command = "clang-format -style=" + style + " -i \"" + file.string() + "\"";
+        }
+
+//        fmt::print("executing: {}\n", command);
+        if (const int result = std::system(command.c_str()); result != 0) {
+            fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Error: Clang-format command failed for file '{}'\n", file.string());
+        }
+    }
 }
