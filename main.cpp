@@ -47,6 +47,30 @@
 #include "github.hpp"
 #include "helpers.hpp"
 
+void print_status_message(const std::string &message, const std::string &status, const fmt::color status_color)
+{
+    fmt::print(fmt::emphasis::bold, "[{}] ", fmt::styled(status, fg(status_color)));
+    fmt::print(fmt::emphasis::bold, "{}\n", message);
+}
+
+void show_spinner_animation(const std::chrono::milliseconds duration)
+{
+    const auto start = std::chrono::high_resolution_clock::now();
+    const auto end = start + duration;
+    const std::vector<std::string> frames = {"-", "\\", "|", "/"};
+    uint64_t frame_index = 0;
+    while (std::chrono::high_resolution_clock::now() < end)
+    {
+        fmt::print(stderr, "\r{} {} ", frames[frame_index], "Running...");
+        fflush(stderr);
+        frame_index = (frame_index + 1) % frames.size();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    fmt::print(stderr, "\r              \r");
+    fflush(stderr);
+}
+
+
 int main(int argc, char **argv)
 {
     CLI::App app{"cppx — project manager for C++"};
@@ -236,7 +260,7 @@ void printhelloworld()
 int main() {
     // This is a placeholder test.
     // Replace with a real testing framework like GTest or Catch2.
-    printhelloworld(); 
+    printhelloworld();
     assert(true);
     return 0;
 }
@@ -287,8 +311,9 @@ void handle_project_set(const std::string &projectName, const std::string &proje
 
     fs::path pathToGlobal;
 #if defined(__linux__) || defined(__APPLE__)
-    const char* homeDir = std::getenv("HOME");
-    if (!homeDir) {
+    const char *homeDir = std::getenv("HOME");
+    if (!homeDir)
+    {
         throw CPPX_Exception("Failed to get HOME directory.");
     }
     pathToGlobal = homeDir;
@@ -304,7 +329,6 @@ void handle_project_set(const std::string &projectName, const std::string &proje
     throw CPPX_Exception("Unsupported OS.");
 #endif
 
-
     toml::table file;
     if (std::filesystem::exists(pathToGlobal))
     {
@@ -319,7 +343,8 @@ void handle_project_set(const std::string &projectName, const std::string &proje
     }
 
     toml::table projectconfig;
-    if(file.contains("project")) {
+    if (file.contains("project"))
+    {
         projectconfig = *file["project"].as_table();
     }
 
@@ -348,6 +373,13 @@ void handle_build(bool debug, const std::string &build_config)
     std::string compiler = pickCompiler();
 
     fs::path build_dir = fs::path(proj.path) / "build";
+
+    fmt::print(fmt::emphasis::bold, "--------------------------------------------------\n");
+    print_status_message("Starting build...", "...", fmt::color::yellow);
+    fmt::print(fmt::emphasis::bold, "--------------------------------------------------\n");
+    show_spinner_animation(std::chrono::milliseconds(500)); // Simulate a short delay
+
+    print_status_message(fmt::format("Creating build directory: {}", build_dir.string()), "...", fmt::color::cyan);
     fs::create_directories(build_dir);
 
     std::string command = compiler + " ";
@@ -358,7 +390,7 @@ void handle_build(bool debug, const std::string &build_config)
     std::vector<std::string> extra_flags;
     if (!build_config.empty() && config.contains("configurations"))
     {
-        if (auto configs = config["configurations"].as_table();configs && configs->contains(build_config))
+        if (auto configs = config["configurations"].as_table(); configs && configs->contains(build_config))
         {
             if (auto conf = (*configs)[build_config].as_table())
             {
@@ -391,23 +423,27 @@ void handle_build(bool debug, const std::string &build_config)
         command += flag + " ";
     }
 
+    print_status_message("Adding include directories...", "...", fmt::color::cyan);
     for (const auto &inc : ps.includepaths)
     {
-        if (fs::path incPath = inc ;incPath.is_absolute())
+        if (fs::path incPath = inc; incPath.is_absolute())
             command += fmt::format("-I\"{}\" ", incPath.string());
         else
             command += fmt::format("-I\"{}\" ", (fs::path(proj.path) / incPath).string());
     }
 
+    print_status_message("Adding source files...", "...", fmt::color::cyan);
     for (const auto &src : ps.srcfiles)
     {
         command += fmt::format("\"{}\" ", (fs::path(proj.path) / src).string());
     }
 
+    print_status_message("Adding link libraries...", "...", fmt::color::cyan);
     for (const auto &lib : ps.staticLinkFiles)
     {
-        if (fs::path libPath = lib ;libPath.has_extension() &&
-            (libPath.extension() == ".a" || libPath.extension() == ".so" || libPath.extension() == ".lib"))
+        if (fs::path libPath = lib; libPath.has_extension() &&
+                                    (libPath.extension() == ".a" || libPath.extension() == ".so" || libPath.extension()
+                                     == ".lib"))
         {
             command += fmt::format("\"{}\" ", libPath.string());
         }
@@ -417,12 +453,14 @@ void handle_build(bool debug, const std::string &build_config)
         }
     }
 
+    print_status_message("Adding link directories...", "...", fmt::color::cyan);
     for (const auto &libpath : ps.LinkDirs)
     {
         command += fmt::format("-L\"{}\" ", libpath);
     }
 
-    for(const auto& [name, value] : ps.defines)
+    print_status_message("Adding preprocessor definitions...", "...", fmt::color::cyan);
+    for (const auto &[name, value] : ps.defines)
     {
         command += fmt::format("-D{}=\"{}\" ", name, value);
     }
@@ -455,24 +493,27 @@ void handle_build(bool debug, const std::string &build_config)
                 compile_cmd += flag + " ";
             for (const auto &inc : ps.includepaths)
             {
-                auto  incPath = fs::path(inc);
+                auto incPath = fs::path(inc);
                 std::string incDir =
                     incPath.is_absolute() ? incPath.string() : (fs::path(proj.path) / incPath).string();
                 compile_cmd += fmt::format("-I\"{}\" ", incDir);
             }
             compile_cmd += fmt::format("-c \"{}\" -o {}", srcPath.string(), obj_path);
             LOG_VERBOSE("Compiling: {}\n", compile_cmd);
+            print_status_message(fmt::format("Compiling: {}", srcPath.filename().string()), "...", fmt::color::cyan);
             if (std::system(compile_cmd.c_str()) != 0)
                 throw CPPX_Exception(fmt::format("Compilation of {} failed.", srcPath.string()));
             object_files.push_back(obj_path);
         }
         std::string a_name = fmt::format("lib{}.a", output_name);
+        print_status_message(fmt::format("Linking static library: {}", a_name), "...", fmt::color::cyan);
         std::string ar_cmd = fmt::format("ar rcs {} {}", (build_dir / a_name).string(), fmt::join(object_files, " "));
         LOG_VERBOSE("Creating static library: {}\n", ar_cmd);
         if (std::system(ar_cmd.c_str()) != 0)
             throw CPPX_Exception("Static archive creation failed.");
-        fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "Successfully built static library: {}/{}\n",
-                   build_dir.string(), a_name);
+        fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "\n");
+        print_status_message(fmt::format("Successfully built static library: {}/{}",
+                                         build_dir.string(), a_name), "✔", fmt::color::green);
         return;
     }
 
@@ -480,7 +521,8 @@ void handle_build(bool debug, const std::string &build_config)
         throw CPPX_Exception("Unsupported buildType!");
     }
 
-    fmt::print(fmt::emphasis::bold | fg(fmt::color::yellow), "Building project...\n");
+    fmt::print(fmt::emphasis::bold, "\n");
+    print_status_message("Final compilation and linking...", "...", fmt::color::cyan);
     LOG_VERBOSE("Executing command: {}\n", command);
     if (std::system(command.c_str()) != 0)
         throw CPPX_Exception("Build failed.");
@@ -492,8 +534,11 @@ void handle_build(bool debug, const std::string &build_config)
 
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "Successfully built: {}/{} in {}ms\n\n", build_dir.string(),
-               final_name, duration.count());
+    fmt::print(fmt::emphasis::bold, "\n");
+    print_status_message(
+        fmt::format("Successfully built: {}/{} in {}ms", build_dir.string(), final_name, duration.count()), "✔",
+        fmt::color::green);
+    fmt::print(fmt::emphasis::bold, "--------------------------------------------------\n");
 }
 
 void handle_run()
@@ -510,7 +555,7 @@ void handle_run()
 
     const std::string command = executable_path.string();
     fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "\nRunning project: {}\n\n", command);
-    if (const int ret = std::system(command.c_str());ret != 0)
+    if (const int ret = std::system(command.c_str()); ret != 0)
     {
         throw CPPX_Exception("Failed to run project.");
     }
@@ -522,7 +567,7 @@ void handle_watch(const std::string &dir, const bool force)
     if (tcgetpgrp(STDIN_FILENO) == getpgrp() && !force)
     {
         throw CPPX_Exception("The watch command must be run in the background (with &).\n"
-                             "Use -f (--force) to run it in the foreground.");
+            "Use -f (--force) to run it in the foreground.");
     }
 
     ProjectConfig pc = getCurrentProject();
@@ -543,7 +588,7 @@ void handle_watch(const std::string &dir, const bool force)
 
     fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "\nMonitoring directory: {}\n\n", watch_dir.string());
 
-    auto cb = [&](const fs::path& filename, bool created) {
+    auto cb = [&](const fs::path &filename, bool created) {
         auto name = filename.string();
         try
         {
@@ -601,14 +646,16 @@ void handle_watch(const std::string &dir, const bool force)
     };
     std::signal(SIGINT, signal_handler);
 
-    std::jthread watcher_thread([&](const std::stop_token& st) {
+    std::jthread watcher_thread([&](const std::stop_token &st) {
         FileWatcher fw(watch_dir, cb, std::chrono::seconds(1));
-        while (!st.stop_requested() && !stop_requested) {
+        while (!st.stop_requested() && !stop_requested)
+        {
             fw.run(st);
         }
     });
     watcher_thread.join();
 }
+
 void handle_ignore(const std::vector<fs::path> &directories)
 {
     ProjectConfig pc = getCurrentProject();
@@ -726,7 +773,7 @@ void handle_pkg_remove(const std::string &packageToRemove)
 {
     const ProjectConfig pc = getCurrentProject();
 
-    if (PackageManager pkg(fmt::format("{}/vendor/", pc.path));pkg.checkIfInstalled(packageToRemove))
+    if (PackageManager pkg(fmt::format("{}/vendor/", pc.path)); pkg.checkIfInstalled(packageToRemove))
     {
         fmt::print(fmt::emphasis::bold | fg(fmt::color::yellow),
                    "Are you sure you want to remove package '{}'? [Y/n]: ", packageToRemove);
@@ -749,7 +796,8 @@ void handle_pkg_remove(const std::string &packageToRemove)
 
         if (tbl.contains("dependencies"))
         {
-            if (toml::table &dependencies_tbl = *tbl["dependencies"].as_table();dependencies_tbl.contains(packageToRemove))
+            if (toml::table &dependencies_tbl = *tbl["dependencies"].as_table(); dependencies_tbl.contains(
+                packageToRemove))
             {
                 dependencies_tbl.erase(packageToRemove);
             }
@@ -790,7 +838,8 @@ void handle_export(const std::string &format)
     ProjectSettings ps = getProjectSettings();
     std::string name = replace_spaces(ps.name);
     if (format == "cmake")
-    {std::ostringstream file;
+    {
+        std::ostringstream file;
         file << "cmake_minimum_required(VERSION 3.10)\n";
         file << "project(" << name << ")\n";
         file << "add_executable(" << name << " ";
@@ -841,7 +890,7 @@ void handle_export(const std::string &format)
         if (!ps.dependencies.empty())
         {
             file << "# Dependencies:\n";
-                    for (const auto &[fst, snd] : ps.dependencies)
+            for (const auto &[fst, snd] : ps.dependencies)
             {
                 file << "# " << fst << " " << snd << "\n";
             }
@@ -849,7 +898,7 @@ void handle_export(const std::string &format)
 
         std::string outPath = pc.path + "/CMakeLists.txt";
 
-        if (std::ofstream out(outPath);out.is_open())
+        if (std::ofstream out(outPath); out.is_open())
         {
             out << file.str();
             fmt::print(fmt::emphasis::bold | fmt::fg(fmt::color::green), "Generated {}\n", outPath);
@@ -903,8 +952,7 @@ void handle_profile()
     for (const auto &compiler : compilers)
     {
         std::string which_cmd = fmt::format("which {} 2>/dev/null", compiler);
-        std::string path;
-        {
+        std::string path; {
             std::array<char, 128> buffer{};
             std::string result;
             if (FILE *pipe = popen(which_cmd.c_str(), "r"))
@@ -922,8 +970,7 @@ void handle_profile()
         if (!path.empty())
         {
             std::string version_cmd = fmt::format("{} --version 2>/dev/null", compiler);
-            std::string version;
-            {
+            std::string version; {
                 std::array<char, 256> buffer{};
                 std::string result;
                 if (FILE *pipe = popen(version_cmd.c_str(), "r"))
@@ -934,7 +981,7 @@ void handle_profile()
                     }
                     pclose(pipe);
                 }
-                if (size_t pos = result.find('\n');pos != std::string::npos)
+                if (size_t pos = result.find('\n'); pos != std::string::npos)
                     version = result.substr(0, pos);
                 else
                     version = result;
@@ -974,8 +1021,9 @@ void handle_profile()
                found[chosen].version);
     fs::path pathToGlobal;
 #if defined(__linux__) || defined(__APPLE__)
-    const char* homeDir = std::getenv("HOME");
-    if (!homeDir) {
+    const char *homeDir = std::getenv("HOME");
+    if (!homeDir)
+    {
         throw CPPX_Exception("Failed to get HOME directory.");
     }
     pathToGlobal = homeDir;
@@ -1008,7 +1056,7 @@ void handle_profile()
     toolchain.insert_or_assign("version", found[chosen].version);
     toolchain.insert_or_assign("path", found[chosen].path);
     file.insert_or_assign("toolchain", toolchain);
-    if (std::ofstream cfg(pathToGlobal);cfg.is_open())
+    if (std::ofstream cfg(pathToGlobal); cfg.is_open())
     {
         cfg << file;
         fmt::print(fg(fmt::color::light_green) | fmt::emphasis::bold, "Updated global toolchain in: {}\n",
@@ -1024,13 +1072,13 @@ void handle_doc()
 {
     ProjectConfig proj = getCurrentProject();
 
-    if (fs::path doxyfile_path = fs::path(proj.path) / "Doxyfile";!fs::exists(doxyfile_path))
+    if (fs::path doxyfile_path = fs::path(proj.path) / "Doxyfile"; !fs::exists(doxyfile_path))
     {
         fmt::print(fmt::emphasis::bold | fg(fmt::color::yellow), "Doxyfile does not exist. Creating default...\n");
 
         ProjectSettings ps = getProjectSettings();
 
-        if (std::ofstream doxyfile(doxyfile_path);doxyfile.is_open())
+        if (std::ofstream doxyfile(doxyfile_path); doxyfile.is_open())
         {
             doxyfile << "PROJECT_NAME           = \"" << ps.name << "\"\n";
             doxyfile << "OUTPUT_DIRECTORY       = docs\n";
@@ -1117,7 +1165,7 @@ void handle_test()
     {
         if (entry.is_regular_file() && (entry.path().extension() == ".cpp" || entry.path().extension() == ".cc"))
         {
-            const fs::path& test_file = entry.path();
+            const fs::path &test_file = entry.path();
             std::string test_name = test_file.stem().string();
             fs::path executable_path = build_dir / test_name;
 
@@ -1240,12 +1288,13 @@ void handle_metadata()
     setMetadata("github_repo", github_repo);
     setMetadata("authors", authors);
 }
+
 void handle_info()
 {
     ProjectConfig proj = getCurrentProject();
     ProjectSettings ps = getProjectSettings();
 
-    std::vector<std::pair<std::string, std::string>> info_items = {
+    std::vector<std::pair<std::string, std::string> > info_items = {
         {"Project Name", ps.name},
         {"Version", ps.version},
         {"Authors", fmt::format("{}", fmt::join(ps.authors, ", "))},
@@ -1260,11 +1309,11 @@ void handle_info()
         {"Vendor Dir", (fs::path(proj.path) / "vendor").string()}};
 
     size_t max_label_main = 0;
-        for (const auto &key : info_items | std::views::keys)
+    for (const auto &key : info_items | std::views::keys)
         max_label_main = std::max(max_label_main, key.size());
     max_label_main += 2;
 
-     constexpr size_t display_width = 70;
+    constexpr size_t display_width = 70;
     const std::string horizontal_line(display_width - 2, '-');
 
     // Header
@@ -1276,7 +1325,7 @@ void handle_info()
     fmt::print("\n");
 
     // Main info
-            for (const auto &[fst, snd] : info_items)
+    for (const auto &[fst, snd] : info_items)
     {
         fmt::print("  {} {:{}} : {}\n", fmt::styled("•", fg(fmt::color::blue_violet)),
                    fmt::styled(fst, fg(fmt::color::light_blue) | fmt::emphasis::bold), max_label_main,
@@ -1318,7 +1367,7 @@ void handle_info()
         {
             GithubInfo gi = getRepoInfo(ps.github_username, ps.github_repo);
 
-            std::vector<std::pair<std::string, std::string>> gh_items = {
+            std::vector<std::pair<std::string, std::string> > gh_items = {
                 {"Name", gi.name},
                 {"Description", gi.description},
                 {"Stars", fmt::format("{} {}", std::to_string(gi.stars), fmt::styled("⭐", fg(fmt::color::gold)))},
@@ -1349,7 +1398,7 @@ void handle_info()
     else
     {
         fmt::print(fg(fmt::color::gray), "  No GitHub repository information available. Set 'github_username' and "
-                                         "'github_repo' in your project settings to display this section.\n");
+                   "'github_repo' in your project settings to display this section.\n");
     }
 
     // Footer

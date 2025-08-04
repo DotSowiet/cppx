@@ -12,21 +12,21 @@ set(TOML_BUILD_UTILITIES OFF CACHE BOOL "" FORCE)
 set(CLI11_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
-  fmt
-  GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-  GIT_TAG        10.1.1
+        fmt
+        GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+        GIT_TAG        10.1.1
 )
 
 FetchContent_Declare(
-  tomlplusplus
-  GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
-  GIT_TAG        v3.4.0    
+        tomlplusplus
+        GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+        GIT_TAG        v3.4.0
 )
 
 FetchContent_Declare(
-  CLI11
-  GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-  GIT_TAG        v2.5.0
+        CLI11
+        GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+        GIT_TAG        v2.5.0
 )
 
 FetchContent_MakeAvailable(fmt tomlplusplus CLI11)
@@ -38,8 +38,8 @@ add_executable(cppx main.cpp
 )
 
 target_link_libraries(cppx PRIVATE
-    fmt::fmt
-    tomlplusplus::tomlplusplus
-    CLI11::CLI11
-    CURL::libcurl
+        fmt::fmt
+        tomlplusplus::tomlplusplus
+        CLI11::CLI11
+        CURL::libcurl
 )
