@@ -47,6 +47,30 @@
 #include "github.hpp"
 #include "helpers.hpp"
 
+void print_status_message(const std::string &message, const std::string &status, const fmt::color status_color)
+{
+    fmt::print(fmt::emphasis::bold, "[{}] ", fmt::styled(status, fg(status_color)));
+    fmt::print(fmt::emphasis::bold, "{}\n", message);
+}
+
+void show_spinner_animation(const std::chrono::milliseconds duration)
+{
+    const auto start = std::chrono::high_resolution_clock::now();
+    const auto end = start + duration;
+    const std::vector<std::string> frames = {"-", "\\", "|", "/"};
+    uint64_t frame_index = 0;
+    while (std::chrono::high_resolution_clock::now() < end)
+    {
+        fmt::print(stderr, "\r{} {} ", frames[frame_index], "Running...");
+        fflush(stderr);
+        frame_index = (frame_index + 1) % frames.size();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    fmt::print(stderr, "\r              \r");
+    fflush(stderr);
+}
+
+
 int main(int argc, char **argv)
 {
     CLI::App app{"cppx — project manager for C++"};
@@ -245,7 +269,7 @@ void printhelloworld()
 int main() {
     // This is a placeholder test.
     // Replace with a real testing framework like GTest or Catch2.
-    printhelloworld(); 
+    printhelloworld();
     assert(true);
     return 0;
 }
@@ -358,6 +382,13 @@ void handle_build(bool debug, const std::string &build_config)
     std::string compiler = pickCompiler();
 
     fs::path build_dir = fs::path(proj.path) / "build";
+
+    fmt::print(fmt::emphasis::bold, "--------------------------------------------------\n");
+    print_status_message("Starting build...", "...", fmt::color::yellow);
+    fmt::print(fmt::emphasis::bold, "--------------------------------------------------\n");
+    show_spinner_animation(std::chrono::milliseconds(500)); // Simulate a short delay
+
+    print_status_message(fmt::format("Creating build directory: {}", build_dir.string()), "...", fmt::color::cyan);
     fs::create_directories(build_dir);
 
     std::string command = compiler + " ";
@@ -401,6 +432,7 @@ void handle_build(bool debug, const std::string &build_config)
         command += flag + " ";
     }
 
+    print_status_message("Adding include directories...", "...", fmt::color::cyan);
     for (const auto &inc : ps.includepaths)
     {
         if (fs::path incPath = inc; incPath.is_absolute())
@@ -409,11 +441,13 @@ void handle_build(bool debug, const std::string &build_config)
             command += fmt::format("-I\"{}\" ", (fs::path(proj.path) / incPath).string());
     }
 
+    print_status_message("Adding source files...", "...", fmt::color::cyan);
     for (const auto &src : ps.srcfiles)
     {
         command += fmt::format("\"{}\" ", (fs::path(proj.path) / src).string());
     }
 
+    print_status_message("Adding link libraries...", "...", fmt::color::cyan);
     for (const auto &lib : ps.staticLinkFiles)
     {
         if (fs::path libPath = lib; libPath.has_extension() &&
@@ -428,10 +462,13 @@ void handle_build(bool debug, const std::string &build_config)
         }
     }
 
+    print_status_message("Adding link directories...", "...", fmt::color::cyan);
     for (const auto &libpath : ps.LinkDirs)
     {
         command += fmt::format("-L\"{}\" ", libpath);
     }
+
+    print_status_message("Adding preprocessor definitions...", "...", fmt::color::cyan);
 
     for (const auto &[name, value] : ps.defines)
     {
@@ -473,17 +510,20 @@ void handle_build(bool debug, const std::string &build_config)
             }
             compile_cmd += fmt::format("-c \"{}\" -o {}", srcPath.string(), obj_path);
             LOG_VERBOSE("Compiling: {}\n", compile_cmd);
+            print_status_message(fmt::format("Compiling: {}", srcPath.filename().string()), "...", fmt::color::cyan);
             if (std::system(compile_cmd.c_str()) != 0)
                 throw CPPX_Exception(fmt::format("Compilation of {} failed.", srcPath.string()));
             object_files.push_back(obj_path);
         }
         std::string a_name = fmt::format("lib{}.a", output_name);
+        print_status_message(fmt::format("Linking static library: {}", a_name), "...", fmt::color::cyan);
         std::string ar_cmd = fmt::format("ar rcs {} {}", (build_dir / a_name).string(), fmt::join(object_files, " "));
         LOG_VERBOSE("Creating static library: {}\n", ar_cmd);
         if (std::system(ar_cmd.c_str()) != 0)
             throw CPPX_Exception("Static archive creation failed.");
-        fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "Successfully built static library: {}/{}\n",
-                   build_dir.string(), a_name);
+        fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "\n");
+        print_status_message(fmt::format("Successfully built static library: {}/{}",
+                                         build_dir.string(), a_name), "✔", fmt::color::green);
         return;
     }
 
@@ -491,7 +531,8 @@ void handle_build(bool debug, const std::string &build_config)
         throw CPPX_Exception("Unsupported buildType!");
     }
 
-    fmt::print(fmt::emphasis::bold | fg(fmt::color::yellow), "Building project...\n");
+    fmt::print(fmt::emphasis::bold, "\n");
+    print_status_message("Final compilation and linking...", "...", fmt::color::cyan);
     LOG_VERBOSE("Executing command: {}\n", command);
     if (std::system(command.c_str()) != 0)
         throw CPPX_Exception("Build failed.");
@@ -503,8 +544,11 @@ void handle_build(bool debug, const std::string &build_config)
 
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "Successfully built: {}/{} in {}ms\n\n", build_dir.string(),
-               final_name, duration.count());
+    fmt::print(fmt::emphasis::bold, "\n");
+    print_status_message(
+        fmt::format("Successfully built: {}/{} in {}ms", build_dir.string(), final_name, duration.count()), "✔",
+        fmt::color::green);
+    fmt::print(fmt::emphasis::bold, "--------------------------------------------------\n");
 }
 
 void handle_run()
