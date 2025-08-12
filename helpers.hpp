@@ -123,7 +123,7 @@ struct Format
     bool clangFormatFile{};
     std::string clangFormatFilepath{};
 
-    Format(std::string  formatBase, bool clangFormatFile, std::string  clangFormatFilepath) : formatBase(std::move(formatBase)), clangFormatFile(clangFormatFile), clangFormatFilepath(std::move((clangFormatFilepath))) {}
+    Format(std::string  formatBase, const bool clangFormatFile, std::string  clangFormatFilepath) : formatBase(std::move(formatBase)), clangFormatFile(clangFormatFile), clangFormatFilepath(std::move((clangFormatFilepath))) {}
 
     Format() = default;
 };
@@ -253,6 +253,7 @@ void handle_test();
 void handle_metadata();
 void handle_info();
 void handle_fmt(const std::vector<std::string> &range);
+void handle_list();
 class FileWatcher
 {
   public:

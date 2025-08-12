@@ -11,12 +11,12 @@
  │ C++ projects seamlessly.                                                    │
  │                                                                             │
  │ Features:                                                                   │
- │   • Create, build, and run C++ projects           🗸                         │
- │   • Manage dependencies and libraries             🗸                         │
- │   • Configure project settings and build system   🗸                         │
- │   • Handle documentation (Doxygen)                🗸                         │
- │   • Clean project artifacts                       🗸                         │
- │   • Run tests, examples, and benchmarks           🗸                         │
+ │   • Create, build, and run C++ projects                                     │
+ │   • Manage dependencies and libraries                                       │
+ │   • Configure project settings and build system                             │
+ │   • Handle documentation (Doxygen)                                          │
+ │   • Clean project artifacts                                                 │
+ │   • Run tests, examples, and benchmarks                                     │
  │                                                                             │
  │ Streamlining your C++ project workflow in one powerful tool.                │
  └─────────────────────────────────────────────────────────────────────────────┘
@@ -24,7 +24,6 @@
 */
 #include <algorithm>
 #include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -55,19 +54,23 @@ void print_status_message(const std::string &message, const std::string &status,
 
 void show_spinner_animation(const std::chrono::milliseconds duration)
 {
-    const auto start = std::chrono::high_resolution_clock::now();
+    using namespace std::chrono;
+    const auto start = high_resolution_clock::now();
     const auto end = start + duration;
-    const std::vector<std::string> frames = {"-", "\\", "|", "/"};
-    uint64_t frame_index = 0;
-    while (std::chrono::high_resolution_clock::now() < end)
+    size_t frame_index = 0;
+
+    while (high_resolution_clock::now() < end)
     {
-        fmt::print(stderr, "\r{} {} ", frames[frame_index], "Running...");
-        fflush(stderr);
+        constexpr std::array frames = {'-', '\\', '|', '/'};
+        fmt::print(stderr, "\r{} Running... ", frames[frame_index]);
+        std::fflush(stderr);
         frame_index = (frame_index + 1) % frames.size();
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(100ms);
     }
-    fmt::print(stderr, "\r              \r");
-    fflush(stderr);
+
+    // Clear the line
+    fmt::print(stderr, "\r{: <20}\r", "");
+    std::fflush(stderr);
 }
 
 
@@ -136,6 +139,9 @@ int main(int argc, char **argv)
     std::string packageToRemove;
     remove->add_option("name", packageToRemove, "Package name")->required();
 
+    // pkg list
+    auto list = package->add_subcommand("list", "Lists the packages");
+
     // ─────────────────────────────────────────────────────────────────
     // export
     auto export_cmd = app.add_subcommand("export", "Exports the configuration file to another format");
@@ -202,6 +208,8 @@ int main(int argc, char **argv)
             handle_info();
         else if (format->parsed())
             handle_fmt(range);
+        else if (list->parsed())
+            handle_list();
         else
             throw CPPX_Exception("Unknown command or missing required arguments.");
     }
@@ -1427,7 +1435,8 @@ void handle_fmt(const std::vector<std::string> &range)
     std::vector<fs::path> files;
 
     // Check if the current project path is a valid directory
-    if (!fs::exists(pc.path) || !fs::is_directory(pc.path)) {
+    if (!fs::exists(pc.path) || !fs::is_directory(pc.path))
+    {
         fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Error: Invalid project directory '{}'\n", pc.path);
         return;
     }
@@ -1442,31 +1451,42 @@ void handle_fmt(const std::vector<std::string> &range)
             for (const auto &t : glob(pc.path, file))
             {
                 // Check if the glob result is a valid file
-                if (fs::exists(t) && fs::is_regular_file(t)) {
+                if (fs::exists(t) && fs::is_regular_file(t))
+                {
                     files.push_back(t);
-                } else {
-                    fmt::print(fg(fmt::color::yellow), "Warning: Glob pattern '{}' matched a non-existent or non-regular file: '{}'\n", file, t.string());
+                }
+                else
+                {
+                    fmt::print(fg(fmt::color::yellow),
+                               "Warning: Glob pattern '{}' matched a non-existent or non-regular file: '{}'\n", file,
+                               t.string());
                 }
             }
         }
         else // Treat as a direct file path
         {
             // Check if the provided path is a valid file
-            if (fs::exists(p) && fs::is_regular_file(p)) {
+            if (fs::exists(p) && fs::is_regular_file(p))
+            {
                 files.push_back(p);
             }
             // Check if the path is a directory
-            else if (fs::exists(p) && fs::is_directory(p)) {
-                fmt::print(fmt::emphasis::bold | fg(fmt::color::yellow), "Warning: Skipping directory '{}', only files can be formatted.\n", p.string());
+            else if (fs::exists(p) && fs::is_directory(p))
+            {
+                fmt::print(fmt::emphasis::bold | fg(fmt::color::yellow),
+                           "Warning: Skipping directory '{}', only files can be formatted.\n", p.string());
             }
             // If the path doesn't exist at all
-            else {
-                fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Error: File not found or invalid path: '{}'\n", p.string());
+            else
+            {
+                fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Error: File not found or invalid path: '{}'\n",
+                           p.string());
             }
         }
     }
 
-    if (files.empty()) {
+    if (files.empty())
+    {
         fmt::print(fg(fmt::color::yellow), "No valid files found to format. Exiting.\n");
         return;
     }
@@ -1486,8 +1506,11 @@ void handle_fmt(const std::vector<std::string> &range)
             }
 
             fs::path configPath = ps.format.clangFormatFilepath;
-            if (!fs::exists(configPath) || !fs::is_regular_file(configPath)) {
-                fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Error: Clang-format configuration file not found or is invalid: '{}'\n", configPath.string());
+            if (!fs::exists(configPath) || !fs::is_regular_file(configPath))
+            {
+                fmt::print(fmt::emphasis::bold | fg(fmt::color::red),
+                           "Error: Clang-format configuration file not found or is invalid: '{}'\n",
+                           configPath.string());
                 return;
             }
 
@@ -1500,9 +1523,45 @@ void handle_fmt(const std::vector<std::string> &range)
             command = "clang-format -style=" + style + " -i \"" + file.string() + "\"";
         }
 
-//        fmt::print("executing: {}\n", command);
-        if (const int result = std::system(command.c_str()); result != 0) {
-            fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Error: Clang-format command failed for file '{}'\n", file.string());
+        //        fmt::print("executing: {}\n", command);
+        if (const int result = std::system(command.c_str()); result != 0)
+        {
+            fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "Error: Clang-format command failed for file '{}'\n",
+                       file.string());
         }
     }
+}
+
+
+
+void handle_list()
+{
+    constexpr int name_width = 20;
+    constexpr int version_width = 12;
+
+    std::string top_line = "+" + std::string(name_width + 2, '-') + "+" + std::string(version_width + 2, '-') + "+";
+    std::string sep_line = top_line;
+
+    fmt::print("{}\n", top_line);
+
+    fmt::print(fmt::emphasis::bold,
+               "| {:^{nw}} | {:^{vw}} |\n",
+               "Dependency", "Version",
+               fmt::arg("nw", name_width),
+               fmt::arg("vw", version_width)
+    );
+
+    fmt::print("{}\n", sep_line);
+
+    for (const auto ps = getProjectSettings(); const auto& [name, version] : ps.dependencies)
+    {
+        fmt::print(
+            "| {:<{nw}} | {:>{vw}} |\n",
+            name, version,
+            fmt::arg("nw", name_width),
+            fmt::arg("vw", version_width)
+        );
+    }
+
+    fmt::print("{}\n", top_line);
 }
